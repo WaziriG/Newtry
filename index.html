@@ -1,0 +1,1055 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enhanced Archery Game</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background: #1a1a2e;
+            font-family: Arial, sans-serif;
+            color: white;
+        }
+        canvas {
+            display: block;
+            margin: 0 auto;
+            background: #1a1a2e;
+            border: 2px solid #333;
+        }
+        #gameInfo {
+            text-align: center;
+            padding: 10px;
+        }
+        #title {
+            font-family: 'Courier New', monospace;
+            font-size: 2.5em;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            color: #4361ee;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+        }
+    </style>
+</head>
+<body>
+    <div id="gameInfo">
+        <div id="title">Armored Archers</div>
+        <p>Use A/D to move, W to jump, SPACE to draw bow (hold and release)</p>
+        <p>Use the mouse to aim</p>
+        <p>Enemy Health: <span id="targetHealth">3</span></p>
+        <p>Score: <span id="score">0</span></p>
+    </div>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+
+    <script>
+        // Game variables
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const gravity = 0.5;
+        let score = 0;
+        
+        // Colors
+        const colors = {
+            playerArmor: '#4361ee',
+            playerBow: '#ffd700',
+            enemyArmor: '#e63946',
+            enemyBow: '#fb8500',
+            platform: '#4a4e69',
+            arrow: '#d1d1d1',
+            arrowhead: '#b8b8b8',
+            background: '#1a1a2e'
+        };
+        
+        // Create stars for background
+        const stars = [];
+        for (let i = 0; i < 100; i++) {
+            stars.push({
+                x: Math.random() * canvas.width,
+                y: Math.random() * canvas.height,
+                size: Math.random() * 2 + 1,
+                alpha: Math.random() * 0.8 + 0.2
+            });
+        }
+        
+        // Player setup
+        const player = {
+            x: 100,
+            y: 500,
+            width: 30,
+            height: 60,
+            speed: 5,
+            jumping: false,
+            velocityY: 0,
+            isDrawingBow: false,
+            bowPower: 0,
+            maxBowPower: 10,
+            aimAngle: 0,
+            color: colors.playerArmor,
+            bowColor: colors.playerBow
+        };
+        
+        // Target setup
+        const target = {
+            x: 700,
+            y: 500,
+            width: 30,
+            height: 60,
+            health: 3,
+            maxHealth: 3,
+            color: colors.enemyArmor,
+            bowColor: colors.enemyBow,
+            hit: false,
+            hitTime: 0,
+            dying: false,
+            deathTime: 0,
+            // Parts for death animation
+            parts: [],
+            // Armor pieces
+            armor: {
+                helmet: { x: 0, y: -30, width: 15, height: 10 },
+                chest: { x: 0, y: -15, width: 20, height: 20 },
+                leftArm: { x: -15, y: -10, width: 10, height: 5 },
+                rightArm: { x: 15, y: -10, width: 10, height: 5 },
+                leftLeg: { x: -8, y: 15, width: 6, height: 20 },
+                rightLeg: { x: 8, y: 15, width: 6, height: 20 }
+            }
+        };
+        
+        // Platform setup
+        const platforms = [
+            { x: 50, y: 530, width: 200, height: 20 },
+            { x: 650, y: 530, width: 200, height: 20 }
+        ];
+        
+        // Arrow setup
+        const arrows = [];
+        
+        // Wind setup
+        let windSpeed = Math.random() * 4 - 2; // Random wind between -2 and 2
+        
+        // Mouse position for aiming
+        let mouseX = 0;
+        let mouseY = 0;
+        
+        // Key states
+        const keys = {
+            left: false,
+            right: false,
+            jump: false,
+            shoot: false
+        };
+        
+        // Time tracking
+        let lastTime = 0;
+        let deltaTime = 0;
+        
+        // Event listeners for keyboard
+        window.addEventListener('keydown', (e) => {
+            switch(e.key) {
+                case 'a':
+                case 'A':
+                    keys.left = true;
+                    break;
+                case 'd':
+                case 'D':
+                    keys.right = true;
+                    break;
+                case 'w':
+                case 'W':
+                    keys.jump = true;
+                    break;
+                case ' ':
+                    keys.shoot = true;
+                    player.isDrawingBow = true;
+                    break;
+            }
+        });
+        
+        window.addEventListener('keyup', (e) => {
+            switch(e.key) {
+                case 'a':
+                case 'A':
+                    keys.left = false;
+                    break;
+                case 'd':
+                case 'D':
+                    keys.right = false;
+                    break;
+                case 'w':
+                case 'W':
+                    keys.jump = false;
+                    break;
+                case ' ':
+                    if (player.isDrawingBow) {
+                        fireArrow();
+                    }
+                    keys.shoot = false;
+                    player.isDrawingBow = false;
+                    player.bowPower = 0;
+                    break;
+            }
+        });
+        
+        // Event listeners for mouse
+        canvas.addEventListener('mousemove', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            mouseX = e.clientX - rect.left;
+            mouseY = e.clientY - rect.top;
+            
+            // Calculate aim angle
+            const dx = mouseX - player.x;
+            const dy = mouseY - (player.y - player.height/2);
+            player.aimAngle = Math.atan2(dy, dx);
+        });
+        
+        // Draw the background
+        function drawBackground() {
+            // Fill the background
+            ctx.fillStyle = colors.background;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw stars
+            for (const star of stars) {
+                ctx.fillStyle = `rgba(255, 255, 255, ${star.alpha})`;
+                ctx.beginPath();
+                ctx.arc(star.x, star.y, star.size, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+        
+        // Draw the player archer
+        function drawPlayer() {
+            ctx.save();
+            ctx.translate(player.x, player.y - player.height/2);
+            
+            // Draw body (stick figure)
+            ctx.strokeStyle = 'white';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            
+            // Body line
+            ctx.moveTo(0, -15);
+            ctx.lineTo(0, 15);
+            
+            // Legs
+            ctx.moveTo(0, 15);
+            ctx.lineTo(-8, 30);
+            ctx.moveTo(0, 15);
+            ctx.lineTo(8, 30);
+            
+            // Head
+            ctx.moveTo(0, -15);
+            ctx.lineTo(0, -25);
+            ctx.stroke();
+            
+            // Draw head
+            ctx.beginPath();
+            ctx.arc(0, -30, 5, 0, Math.PI * 2);
+            ctx.stroke();
+            
+            // Draw armor pieces
+            ctx.fillStyle = player.color;
+            
+            // Helmet
+            ctx.beginPath();
+            ctx.arc(0, -30, 7, 0, Math.PI * 2);
+            ctx.fill();
+            // Helmet opening (face)
+            ctx.fillStyle = 'white';
+            ctx.beginPath();
+            ctx.arc(0, -30, 5, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Chest plate
+            ctx.fillStyle = player.color;
+            ctx.beginPath();
+            ctx.moveTo(-10, -15);
+            ctx.lineTo(10, -15);
+            ctx.lineTo(8, 5);
+            ctx.lineTo(-8, 5);
+            ctx.closePath();
+            ctx.fill();
+            
+            // Shoulder armor
+            ctx.beginPath();
+            ctx.arc(-10, -15, 5, 0, Math.PI, true);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(10, -15, 5, 0, Math.PI, true);
+            ctx.fill();
+            
+            // Leg armor
+            ctx.fillRect(-10, 15, 8, 5);
+            ctx.fillRect(2, 15, 8, 5);
+            
+            // Arms based on bow drawing
+            const armAngle = player.isDrawingBow ? player.aimAngle : -Math.PI/4;
+            
+            // Draw bow arm
+            ctx.save();
+            ctx.rotate(armAngle);
+            ctx.strokeStyle = 'white';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(0, -15);
+            ctx.lineTo(20, -15);
+            ctx.stroke();
+            
+            // Arm armor
+            ctx.fillStyle = player.color;
+            ctx.fillRect(10, -18, 8, 6);
+            
+            // Draw bow if drawing
+            if (player.isDrawingBow) {
+                // Bow wood
+                ctx.strokeStyle = player.bowColor;
+                ctx.lineWidth = 3;
+                
+                // Calculate bow curve based on power
+                const bowPull = player.bowPower / player.maxBowPower * 10;
+                
+                // Draw the bow
+                ctx.beginPath();
+                ctx.moveTo(20, -25);
+                ctx.quadraticCurveTo(25 + bowPull, -15, 20, -5);
+                ctx.stroke();
+                
+                // Draw the string
+                ctx.strokeStyle = 'white';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(20, -25);
+                ctx.lineTo(20 + bowPull, -15);
+                ctx.lineTo(20, -5);
+                ctx.stroke();
+                
+                // Draw arrow
+                ctx.strokeStyle = colors.arrow;
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(20 + bowPull, -15);
+                ctx.lineTo(35 + bowPull, -15);
+                ctx.stroke();
+                
+                // Arrow head
+                ctx.fillStyle = colors.arrowhead;
+                ctx.beginPath();
+                ctx.moveTo(35 + bowPull, -15);
+                ctx.lineTo(32 + bowPull, -18);
+                ctx.lineTo(32 + bowPull, -12);
+                ctx.closePath();
+                ctx.fill();
+                
+                // Arrow fletching
+                ctx.fillStyle = player.color;
+                ctx.beginPath();
+                ctx.moveTo(20 + bowPull, -15);
+                ctx.lineTo(23 + bowPull, -18);
+                ctx.lineTo(23 + bowPull, -12);
+                ctx.closePath();
+                ctx.fill();
+            }
+            ctx.restore();
+            
+            // Secondary arm
+            ctx.save();
+            ctx.rotate(player.isDrawingBow ? armAngle : Math.PI/4);
+            ctx.strokeStyle = 'white';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(0, -15);
+            ctx.lineTo(-15, -15);
+            ctx.stroke();
+            
+            // Arm armor
+            ctx.fillStyle = player.color;
+            ctx.fillRect(-15, -18, 8, 6);
+            ctx.restore();
+            
+            ctx.restore();
+            
+            // Draw aim line
+            if (player.isDrawingBow) {
+                drawAimLine();
+            }
+        }
+        
+        // Draw the target
+        function drawTarget() {
+            if (target.dying) {
+                // Draw death animation
+                const timeSinceDeath = (Date.now() - target.deathTime) / 1000;
+                
+                if (timeSinceDeath > 2) {
+                    // Reset target after death animation
+                    resetTarget();
+                    return;
+                }
+                
+                // Draw falling armor pieces
+                for (const part of target.parts) {
+                    ctx.save();
+                    ctx.translate(part.x, part.y);
+                    ctx.rotate(part.rotation);
+                    
+                    ctx.fillStyle = target.color;
+                    ctx.fillRect(-part.width/2, -part.height/2, part.width, part.height);
+                    
+                    ctx.restore();
+                    
+                    // Update part position
+                    part.x += part.velocityX;
+                    part.y += part.velocityY;
+                    part.velocityY += gravity * 0.5;
+                    part.rotation += part.rotationSpeed;
+                }
+                
+                return;
+            }
+            
+            // Check if target was recently hit
+            const isHit = target.hit && (Date.now() - target.hitTime < 300);
+            
+            ctx.save();
+            ctx.translate(target.x, target.y - target.height/2);
+            
+            // Apply hit effect
+            if (isHit) {
+                // Random shake effect
+                ctx.translate(Math.random() * 4 - 2, Math.random() * 4 - 2);
+            }
+            
+            // Draw body (stick figure)
+            ctx.strokeStyle = 'white';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            
+            // Body line
+            ctx.moveTo(0, -15);
+            ctx.lineTo(0, 15);
+            
+            // Legs
+            ctx.moveTo(0, 15);
+            ctx.lineTo(-8, 30);
+            ctx.moveTo(0, 15);
+            ctx.lineTo(8, 30);
+            
+            // Head
+            ctx.moveTo(0, -15);
+            ctx.lineTo(0, -25);
+            ctx.stroke();
+            
+            // Draw head
+            ctx.beginPath();
+            ctx.arc(0, -30, 5, 0, Math.PI * 2);
+            ctx.stroke();
+            
+            // Draw armor pieces
+            ctx.fillStyle = target.color;
+            
+            // Helmet
+            ctx.beginPath();
+            ctx.moveTo(0, -37);
+            ctx.lineTo(-7, -30);
+            ctx.lineTo(-5, -25);
+            ctx.lineTo(5, -25);
+            ctx.lineTo(7, -30);
+            ctx.closePath();
+            ctx.fill();
+            
+            // Chest plate - different style from player
+            ctx.beginPath();
+            ctx.moveTo(-8, -15);
+            ctx.lineTo(8, -15);
+            ctx.lineTo(10, 5);
+            ctx.lineTo(-10, 5);
+            ctx.closePath();
+            ctx.fill();
+            
+            // Spiked shoulder armor
+            ctx.beginPath();
+            ctx.moveTo(-8, -15);
+            ctx.lineTo(-15, -20);
+            ctx.lineTo(-12, -15);
+            ctx.lineTo(-15, -10);
+            ctx.closePath();
+            ctx.fill();
+            
+            ctx.beginPath();
+            ctx.moveTo(8, -15);
+            ctx.lineTo(15, -20);
+            ctx.lineTo(12, -15);
+            ctx.lineTo(15, -10);
+            ctx.closePath();
+            ctx.fill();
+            
+            // Leg armor
+            ctx.fillRect(-10, 15, 8, 5);
+            ctx.fillRect(2, 15, 8, 5);
+            
+            // Arms and bow
+            ctx.save();
+            ctx.rotate(Math.PI);  // Enemy faces left
+            
+            // Draw arms
+            ctx.strokeStyle = 'white';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(0, -15);
+            ctx.lineTo(15, -20);
+            ctx.moveTo(0, -15);
+            ctx.lineTo(-15, -20);
+            ctx.stroke();
+            
+            // Arm armor
+            ctx.fillStyle = target.color;
+            ctx.fillRect(-20, -22, 8, 6);
+            ctx.fillRect(12, -22, 8, 6);
+            
+            // Enemy bow
+            ctx.strokeStyle = target.bowColor;
+            ctx.lineWidth = 3;
+            
+            // Draw the bow
+            ctx.beginPath();
+            ctx.moveTo(15, -25);
+            ctx.quadraticCurveTo(20, -20, 15, -15);
+            ctx.stroke();
+            
+            // Draw the string
+            ctx.strokeStyle = 'white';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(15, -25);
+            ctx.lineTo(15, -15);
+            ctx.stroke();
+            
+            ctx.restore();
+            
+            // Health bar
+            const healthBarWidth = 30;
+            const healthBarHeight = 4;
+            const healthPercentage = target.health / target.maxHealth;
+            
+            ctx.fillStyle = '#333';
+            ctx.fillRect(-healthBarWidth/2, -45, healthBarWidth, healthBarHeight);
+            
+            ctx.fillStyle = target.health > 1 ? '#2ecc71' : '#e74c3c';
+            ctx.fillRect(-healthBarWidth/2, -45, healthBarWidth * healthPercentage, healthBarHeight);
+            
+            ctx.restore();
+        }
+        
+        // Draw platforms
+        function drawPlatforms() {
+            ctx.fillStyle = colors.platform;
+            platforms.forEach(platform => {
+                ctx.fillRect(platform.x, platform.y, platform.width, platform.height);
+                
+                // Platform details
+                ctx.fillStyle = '#3a3a5c';
+                ctx.fillRect(platform.x, platform.y, platform.width, 5);
+                
+                // Platform edge highlights
+                ctx.fillStyle = '#5a5a7c';
+                ctx.fillRect(platform.x, platform.y, 5, platform.height);
+                ctx.fillRect(platform.x + platform.width - 5, platform.y, 5, platform.height);
+            });
+        }
+        
+        // Draw arrows
+        function drawArrows() {
+            arrows.forEach(arrow => {
+                ctx.save();
+                ctx.translate(arrow.x, arrow.y);
+                ctx.rotate(Math.atan2(arrow.velocityY, arrow.velocityX));
+                
+                // Draw trail effect
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+                ctx.beginPath();
+                ctx.moveTo(-15, 0);
+                ctx.lineTo(0, 0);
+                ctx.stroke();
+                
+                // Arrow shaft
+                ctx.strokeStyle = colors.arrow;
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                ctx.lineTo(20, 0);
+                ctx.stroke();
+                
+                // Arrow head
+                ctx.fillStyle = colors.arrowhead;
+                ctx.beginPath();
+                ctx.moveTo(20, 0);
+                ctx.lineTo(15, -3);
+                ctx.lineTo(15, 3);
+                ctx.closePath();
+                ctx.fill();
+                
+                // Arrow fletching
+                ctx.fillStyle = player.color;
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                ctx.lineTo(5, -3);
+                ctx.lineTo(5, 3);
+                ctx.closePath();
+                ctx.fill();
+                
+                ctx.restore();
+            });
+        }
+        
+        // Draw aim trajectory
+        function drawAimLine() {
+            if (!player.isDrawingBow) return;
+            
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+            ctx.setLineDash([5, 5]);
+            ctx.beginPath();
+            
+            const startX = player.x + Math.cos(player.aimAngle) * 25;
+            const startY = player.y - player.height/2 + Math.sin(player.aimAngle) * 25;
+            
+            ctx.moveTo(startX, startY);
+            
+            // Simulate arrow path
+            let simX = startX;
+            let simY = startY;
+            let simVelX = Math.cos(player.aimAngle) * player.bowPower * 3;
+            let simVelY = Math.sin(player.aimAngle) * player.bowPower * 3;
+            
+            for (let i = 0; i < 30; i++) {
+                // Apply gravity and wind
+                simVelY += gravity * 0.1;
+                simVelX += windSpeed * 0.01;
+                
+                simX += simVelX * 0.1;
+                simY += simVelY * 0.1;
+                
+                ctx.lineTo(simX, simY);
+                
+                // Stop if would hit ground or go off screen
+                if (simY > canvas.height || simX < 0 || simX > canvas.width) {
+                    break;
+                }
+            }
+            
+            ctx.stroke();
+            ctx.setLineDash([]);
+        }
+        
+        // Draw power meter
+        function drawPowerMeter() {
+            if (!player.isDrawingBow) return;
+            
+            const meterWidth = 100;
+            const meterHeight = 10;
+            const meterX = 20;
+            const meterY = 20;
+            
+            // Background
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+            ctx.fillRect(meterX, meterY, meterWidth, meterHeight);
+            
+            // Border
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(meterX, meterY, meterWidth, meterHeight);
+            
+            // Power level
+            const powerWidth = (player.bowPower / player.maxBowPower) * meterWidth;
+            const powerColor = player.bowPower < player.maxBowPower * 0.6 ? '#3498db' : 
+                             player.bowPower < player.maxBowPower * 0.9 ? '#f39c12' : '#e74c3c';
+            
+            ctx.fillStyle = powerColor;
+            ctx.fillRect(meterX, meterY, powerWidth, meterHeight);
+            
+            // Power label
+            ctx.fillStyle = '#fff';
+            ctx.font = '12px Arial';
+            ctx.fillText('POWER', meterX + meterWidth / 2 - 20, meterY + meterHeight + 15);
+        }
+        
+        // Draw wind indicator
+        function drawWindIndicator() {
+            const indicatorX = canvas.width - 150;
+            const indicatorY = 25;
+            const maxLength = 80;
+            
+            ctx.fillStyle = 'white';
+            ctx.font = '16px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('WIND', indicatorX, indicatorY);
+            
+            // Draw wind strength bar
+            const windBar = Math.abs(windSpeed) / 5 * maxLength; // Scale to max
+            const direction = windSpeed >= 0 ? 1 : -1;
+            
+            // Background bar
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+            ctx.fillRect(indicatorX - maxLength/2, indicatorY + 10, maxLength, 10);
+            
+            // Wind strength
+            ctx.fillStyle = Math.abs(windSpeed) < 1 ? '#3498db' : 
+                          Math.abs(windSpeed) < 3 ? '#f39c12' : '#e74c3c';
+            
+            if (direction > 0) {
+                ctx.fillRect(indicatorX, indicatorY + 10, windBar, 10);
+            } else {
+                ctx.fillRect(indicatorX - windBar, indicatorY + 10, windBar, 10);
+            }
+            
+            // Direction arrow
+            ctx.beginPath();
+            if (direction > 0) {
+                ctx.moveTo(indicatorX + windBar + 5, indicatorY + 15);
+                ctx.lineTo(indicatorX + windBar + 15, indicatorY + 15);
+                ctx.lineTo(indicatorX + windBar + 10, indicatorY + 5);
+            } else {
+                ctx.moveTo(indicatorX - windBar - 5, indicatorY + 15);
+                ctx.lineTo(indicatorX - windBar - 15, indicatorY + 15);
+                ctx.lineTo(indicatorX - windBar - 10, indicatorY + 5);
+            }
+            ctx.closePath();
+            ctx.fill();
+        }
+        
+        // Update player position and state
+        function updatePlayer(dt) {
+            // Movement
+            if (keys.left) {
+                player.x -= player.speed;
+            }
+            if (keys.right) {
+                player.x += player.speed;
+            }
+            
+            // Jumping
+            if (keys.jump && !player.jumping) {
+                player.jumping = true;
+                player.velocityY = -15;
+            }
+            
+            // Apply gravity
+            player.velocityY += gravity;
+            player.y += player.velocityY;
+            
+            // Platform collision
+            let onPlatform = false;
+            platforms.forEach(platform => {
+                // Check if player is on a platform
+                if (player.y >= platform.y && 
+                    player.y <= platform.y + 10 && 
+                    player.x + player.width/2 >= platform.x && 
+                    player.x - player.width/2 <= platform.x + platform.width) {
+                    player.y = platform.y;
+                    player.velocityY = 0;
+                    player.jumping = false;
+                    onPlatform = true;
+                }
+            });
+            
+            // If not on any platform and below bottom, game over
+            if (!onPlatform && player.y > canvas.height) {
+                // Reset player position
+                player.y = 500;
+                player.velocityY = 0;
+                player.jumping = false;
+            }
+            
+            // Keep player in bounds
+            if (player.x < 20) player.x = 20;
+            if (player.x > canvas.width - 20) player.x = canvas.width - 20;
+            
+            // Bow power
+            if (player.isDrawingBow) {
+                player.bowPower += 4 * dt;
+                if (player.bowPower > player.maxBowPower) {
+                    player.bowPower = player.maxBowPower;
+                }
+            }
+        }
+        
+        // Update target
+        function updateTarget(dt) {
+            if (target.hit) {
+                if (Date.now() - target.hitTime > 300) {
+                    target.hit = false;
+                }
+            }
+            
+            if (target.dying) {
+                // Update death animation parts
+                for (let i = target.parts.length - 1; i >= 0; i--) {
+                    const part = target.parts[i];
+                    
+                    // Remove parts that are off-screen
+                    if (part.y > canvas.height) {
+                        target.parts.splice(i, 1);
+                    }
+                }
+            }
+        }
+        
+        // Update arrows
+        function updateArrows(dt) {
+            for (let i = arrows.length - 1; i >= 0; i--) {
+                const arrow = arrows[i];
+                
+                // Apply gravity
+                arrow.velocityY += gravity;
+                
+                // Apply wind
+                arrow.velocityX += windSpeed * 0.01;
+                
+                // Update position
+                arrow.x += arrow.velocityX * dt * 60;
+                arrow.y += arrow.velocityY * dt * 60;
+                
+                // Check collision with target
+                if (!target.dying && checkArrowHit(arrow, target)) {
+                    // Mark target as hit
+                    target.hit = true;
+                    target.hitTime = Date.now();
+                    
+                    // Reduce health
+                    target.health--;
+                    document.getElementById('targetHealth').textContent = target.health;
+                    
+                    // Increase score
+                    score += 10;
+                    document.getElementById('score').textContent = score;
+                    
+                    // Remove the arrow
+                    arrows.splice(i, 1);
+                    
+                    // Check if target is destroyed
+                    if (target.health <= 0) {
+                        startDeathAnimation();
+                    }
+                    
+                    continue;
+                }
+                
+                // Remove if off screen
+                if (arrow.y > canvas.height || arrow.x < 0 || arrow.x > canvas.width) {
+                    arrows.splice(i, 1);
+                }
+            }
+        }
+        
+        // Start the death animation for the target
+        function startDeathAnimation() {
+            target.dying = true;
+            target.deathTime = Date.now();
+            
+            // Create parts for the death animation
+            target.parts = [
+                // Helmet
+                {
+                    x: target.x,
+                    y: target.y - target.height + 5,
+                    width: 15,
+                    height: 10,
+                    velocityX: -2 + Math.random() * 4,
+                    velocityY: -5 - Math.random() * 5,
+                    rotation: 0,
+                    rotationSpeed: -0.1 + Math.random() * 0.2
+                },
+                // Chest
+                {
+                    x: target.x,
+                    y: target.y - target.height/2,
+                    width: 20,
+                    height: 20,
+                    velocityX: -1 + Math.random() * 2,
+                    velocityY: -3 - Math.random() * 3,
+                    rotation: 0,
+                    rotationSpeed: -0.1 + Math.random() * 0.2
+                },
+                // Left
+                // Left arm
+                {
+                    x: target.x - 15,
+                    y: target.y - target.height/2,
+                    width: 10,
+                    height: 5,
+                    velocityX: -3 - Math.random() * 2,
+                    velocityY: -2 - Math.random() * 4,
+                    rotation: 0,
+                    rotationSpeed: -0.2 - Math.random() * 0.3
+                },
+                // Right arm
+                {
+                    x: target.x + 15,
+                    y: target.y - target.height/2,
+                    width: 10,
+                    height: 5,
+                    velocityX: 3 + Math.random() * 2,
+                    velocityY: -2 - Math.random() * 4,
+                    rotation: 0,
+                    rotationSpeed: 0.2 + Math.random() * 0.3
+                },
+                // Left leg
+                {
+                    x: target.x - 8,
+                    y: target.y - 10,
+                    width: 6,
+                    height: 20,
+                    velocityX: -2 - Math.random(),
+                    velocityY: -1 - Math.random() * 2,
+                    rotation: 0,
+                    rotationSpeed: -0.15 - Math.random() * 0.2
+                },
+                // Right leg
+                {
+                    x: target.x + 8,
+                    y: target.y - 10,
+                    width: 6,
+                    height: 20,
+                    velocityX: 2 + Math.random(),
+                    velocityY: -1 - Math.random() * 2,
+                    rotation: 0,
+                    rotationSpeed: 0.15 + Math.random() * 0.2
+                },
+                // Bow
+                {
+                    x: target.x - 15,
+                    y: target.y - target.height/2,
+                    width: 5,
+                    height: 15,
+                    velocityX: -4 - Math.random() * 2,
+                    velocityY: -3 - Math.random() * 3,
+                    rotation: 0,
+                    rotationSpeed: -0.3 - Math.random() * 0.4
+                }
+            ];
+            
+            // Play death sound (if implemented)
+            // playSound('enemy-death');
+        }
+        
+        // Check if arrow hits target
+        function checkArrowHit(arrow, targetObj) {
+            const targetLeft = targetObj.x - targetObj.width/2;
+            const targetRight = targetObj.x + targetObj.width/2;
+            const targetTop = targetObj.y - targetObj.height;
+            const targetBottom = targetObj.y;
+            
+            // Arrow tip position
+            const arrowTipX = arrow.x + Math.cos(Math.atan2(arrow.velocityY, arrow.velocityX)) * 20;
+            const arrowTipY = arrow.y + Math.sin(Math.atan2(arrow.velocityY, arrow.velocityX)) * 20;
+            
+            return arrowTipX >= targetLeft && arrowTipX <= targetRight && 
+                   arrowTipY >= targetTop && arrowTipY <= targetBottom;
+        }
+        
+        // Fire an arrow
+        function fireArrow() {
+            // Calculate starting position at the bow
+            const bowOffset = 20 + player.bowPower / player.maxBowPower * 10;
+            const arrowX = player.x + Math.cos(player.aimAngle) * bowOffset;
+            const arrowY = player.y - player.height/2 + Math.sin(player.aimAngle) * bowOffset;
+            
+            // Calculate arrow velocity based on bow power
+            const powerMultiplier = 3;
+            const arrowVelX = Math.cos(player.aimAngle) * player.bowPower * powerMultiplier;
+            const arrowVelY = Math.sin(player.aimAngle) * player.bowPower * powerMultiplier;
+            
+            // Add to arrows array
+            arrows.push({
+                x: arrowX,
+                y: arrowY,
+                velocityX: arrowVelX,
+                velocityY: arrowVelY
+            });
+            
+            // Play arrow sound (if implemented)
+            // playSound('arrow-release');
+        }
+        
+        // Reset target after being destroyed
+        function resetTarget() {
+            target.health = target.maxHealth;
+            document.getElementById('targetHealth').textContent = target.health;
+            target.dying = false;
+            target.hit = false;
+            target.parts = [];
+            
+            // New random wind
+            windSpeed = (Math.random() * 8 - 4);
+        }
+        
+        // Add particle effects
+        function createParticles(x, y, color, count) {
+            const particles = [];
+            
+            for (let i = 0; i < count; i++) {
+                particles.push({
+                    x: x,
+                    y: y,
+                    size: 1 + Math.random() * 3,
+                    color: color,
+                    velocityX: -2 + Math.random() * 4,
+                    velocityY: -2 + Math.random() * 4,
+                    life: 1,
+                    decay: 0.01 + Math.random() * 0.03
+                });
+            }
+            
+            return particles;
+        }
+        
+        // Update game time
+        function updateTime(timestamp) {
+            if (!lastTime) {
+                lastTime = timestamp;
+                return 0;
+            }
+            
+            deltaTime = (timestamp - lastTime) / 1000; // Convert to seconds
+            lastTime = timestamp;
+            
+            // Limit delta time to avoid physics issues on lag
+            if (deltaTime > 0.1) deltaTime = 0.1;
+            
+            return deltaTime;
+        }
+        
+        // Main game loop
+        function gameLoop(timestamp) {
+            // Update time
+            const dt = updateTime(timestamp);
+            
+            // Clear canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw background
+            drawBackground();
+            
+            // Update game objects
+            updatePlayer(dt);
+            updateTarget(dt);
+            updateArrows(dt);
+            
+            // Draw game objects
+            drawPlatforms();
+            drawPlayer();
+            drawTarget();
+            drawArrows();
+            drawPowerMeter();
+            drawWindIndicator();
+            
+            // Continue game loop
+            requestAnimationFrame(gameLoop);
+        }
+        
+        // Start the game
+        gameLoop();
+    </script>
+</body>
+</html>
