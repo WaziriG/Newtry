@@ -803,3 +803,929 @@
                     if (arrow.grappling && arrow.targetHit) {
                         ctx.strokeStyle = '#a0a0a0';
                         ctx.setLineDash([2, 2]);
+                        ctx.beginPath();
+                        ctx.moveTo(0, 0);
+                        // Draw line back to player
+                        const angle = Math.atan2(player.y - player.height/2 - arrow.y, player.x - arrow.x);
+                        const distance = Math.sqrt(Math.pow(player.x - arrow.x, 2) + Math.pow(player.y - player.height/2 - arrow.y, 2));
+                        ctx.lineTo(-distance, 0);
+                        ctx.stroke();
+                        ctx.setLineDash([]);
+                    }
+                } else if (arrow.type === ARROW_TYPES.EXPLOSIVE) {
+                    // Explosive arrowhead
+                    ctx.beginPath();
+                    ctx.arc(20, 0, 4, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    // Fuse
+                    ctx.strokeStyle = '#ffcc00';
+                    ctx.beginPath();
+                    ctx.moveTo(20, 0);
+                    ctx.quadraticCurveTo(25, -5, 23, -3);
+                    ctx.stroke();
+// Draw explosion if exploding
+                    if (arrow.exploding) {
+                        const explosionRadius = arrow.explosionRadius || 0;
+                        const maxRadius = 40;
+                        const opacity = 1 - (explosionRadius / maxRadius);
+                        
+                        // Outer explosion
+                        ctx.fillStyle = `rgba(255, 107, 107, ${opacity * 0.7})`;
+                        ctx.beginPath();
+                        ctx.arc(20, 0, explosionRadius, 0, Math.PI * 2);
+                        ctx.fill();
+                        
+                        // Inner explosion
+                        ctx.fillStyle = `rgba(255, 204, 0, ${opacity * 0.9})`;
+                        ctx.beginPath();
+                        ctx.arc(20, 0, explosionRadius * 0.6, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                } else if (arrow.type === ARROW_TYPES.SPEED) {
+                    // Aerodynamic arrowhead for speed arrow
+                    ctx.beginPath();
+                    ctx.moveTo(20, 0);
+                    ctx.lineTo(25, 0);
+                    ctx.lineTo(20, -3);
+                    ctx.lineTo(20, 3);
+                    ctx.closePath();
+                    ctx.fill();
+                } else {
+                    // Normal arrowhead
+                    ctx.beginPath();
+                    ctx.moveTo(20, 0);
+                    ctx.lineTo(15, -3);
+                    ctx.lineTo(15, 3);
+                    ctx.closePath();
+                    ctx.fill();
+                }
+                
+                // Arrow fletching
+                ctx.fillStyle = arrowColor;
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                ctx.lineTo(5, -3);
+                ctx.lineTo(5, 3);
+                ctx.closePath();
+                ctx.fill();
+                
+                ctx.restore();
+            });
+        }
+        
+        // Draw particles (for explosions and effects)
+        function drawParticles() {
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const particle = particles[i];
+                
+                // Draw the particle
+                ctx.fillStyle = `rgba(${particle.color.r}, ${particle.color.g}, ${particle.color.b}, ${particle.life})`;
+                ctx.beginPath();
+                ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Update particle
+                particle.x += particle.velocityX;
+                particle.y += particle.velocityY;
+                particle.velocityY += gravity * 0.1;
+                particle.life -= particle.decay;
+                
+                // Remove dead particles
+                if (particle.life <= 0) {
+                    particles.splice(i, 1);
+                }
+            }
+        }
+        
+        // Draw aim trajectory
+        function drawAimLine() {
+            if (!player.isDrawingBow) return;
+            
+            // Choose line color based on arrow type
+            let lineColor;
+            switch(currentArrowType) {
+                case ARROW_TYPES.GRAPPLING:
+                    lineColor = 'rgba(60, 179, 113, 0.3)';
+                    break;
+                case ARROW_TYPES.EXPLOSIVE:
+                    lineColor = 'rgba(255, 107, 107, 0.3)';
+                    break;
+                case ARROW_TYPES.SPEED:
+                    lineColor = 'rgba(0, 191, 255, 0.3)';
+                    break;
+                default:
+                    lineColor = 'rgba(255, 255, 255, 0.3)';
+            }
+            
+            ctx.strokeStyle = lineColor;
+            ctx.setLineDash([5, 5]);
+            ctx.beginPath();
+            
+            const startX = player.x + Math.cos(player.aimAngle) * 25;
+            const startY = player.y - player.height/2 + Math.sin(player.aimAngle) * 25;
+            
+            ctx.moveTo(startX, startY);
+            
+            // Simulate arrow path
+            let simX = startX;
+            let simY = startY;
+            
+            // Speed arrows have higher velocity and less gravity effect
+            const speedMultiplier = currentArrowType === ARROW_TYPES.SPEED ? 5 : 3;
+            // Gravity affects speed arrows less
+            const gravityEffect = currentArrowType === ARROW_TYPES.SPEED ? 0.05 : 0.1;
+            
+            let simVelX = Math.cos(player.aimAngle) * player.bowPower * speedMultiplier;
+            let simVelY = Math.sin(player.aimAngle) * player.bowPower * speedMultiplier;
+            
+            // Grappling arrows have a straighter trajectory
+            const windEffect = currentArrowType === ARROW_TYPES.GRAPPLING ? 0.005 : 0.01;
+            
+            for (let i = 0; i < 30; i++) {
+                // Apply gravity and wind
+                simVelY += gravity * gravityEffect;
+                simVelX += windSpeed * windEffect;
+                
+                simX += simVelX * 0.1;
+                simY += simVelY * 0.1;
+                
+                ctx.lineTo(simX, simY);
+                
+                // Stop if would hit ground or go off screen
+                if (simY > canvas.height || simX < 0 || simX > canvas.width) {
+                    break;
+                }
+            }
+            
+            ctx.stroke();
+            ctx.setLineDash([]);
+        }
+        
+        // Draw power meter
+        function drawPowerMeter() {
+            if (!player.isDrawingBow) return;
+            
+            const meterWidth = 100;
+            const meterHeight = 10;
+            const meterX = 20;
+            const meterY = 20;
+            
+            // Background
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+            ctx.fillRect(meterX, meterY, meterWidth, meterHeight);
+            
+            // Border
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(meterX, meterY, meterWidth, meterHeight);
+            
+            // Power level - color based on arrow type
+            const powerWidth = (player.bowPower / player.maxBowPower) * meterWidth;
+            
+            // Choose power color based on arrow type
+            let powerColor;
+            switch(currentArrowType) {
+                case ARROW_TYPES.GRAPPLING:
+                    powerColor = '#3cb371'; // Green
+                    break;
+                case ARROW_TYPES.EXPLOSIVE:
+                    powerColor = '#ff6b6b'; // Red
+                    break;
+                case ARROW_TYPES.SPEED:
+                    powerColor = '#00bfff'; // Blue
+                    break;
+                default:
+                    // Normal arrow power colors
+                    powerColor = player.bowPower < player.maxBowPower * 0.6 ? '#3498db' : 
+                                 player.bowPower < player.maxBowPower * 0.9 ? '#f39c12' : '#e74c3c';
+            }
+            
+            ctx.fillStyle = powerColor;
+            ctx.fillRect(meterX, meterY, powerWidth, meterHeight);
+            
+            // Power label
+            ctx.fillStyle = '#fff';
+            ctx.font = '12px Arial';
+            ctx.fillText('POWER', meterX + meterWidth / 2 - 20, meterY + meterHeight + 15);
+            
+            // Arrow type indicator
+            ctx.font = '14px Arial';
+            ctx.fillText(`ARROW: ${currentArrowType.toUpperCase()}`, meterX, meterY - 10);
+            
+            // Arrow description
+            ctx.font = '12px Arial';
+            ctx.fillText(ARROW_DESCRIPTIONS[currentArrowType], meterX, meterY - 30);
+        }
+        
+        // Draw wind indicator
+        function drawWindIndicator() {
+            const indicatorX = canvas.width - 150;
+            const indicatorY = 25;
+            const maxLength = 80;
+            
+            ctx.fillStyle = 'white';
+            ctx.font = '16px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('WIND', indicatorX, indicatorY);
+            
+            // Draw wind strength bar
+            const windBar = Math.abs(windSpeed) / 5 * maxLength; // Scale to max
+            const direction = windSpeed >= 0 ? 1 : -1;
+            
+            // Background bar
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+            ctx.fillRect(indicatorX - maxLength/2, indicatorY + 10, maxLength, 10);
+            
+            // Wind strength
+            ctx.fillStyle = Math.abs(windSpeed) < 1 ? '#3498db' : 
+                          Math.abs(windSpeed) < 3 ? '#f39c12' : '#e74c3c';
+            
+            if (direction > 0) {
+                ctx.fillRect(indicatorX, indicatorY + 10, windBar, 10);
+            } else {
+                ctx.fillRect(indicatorX - windBar, indicatorY + 10, windBar, 10);
+            }
+            
+            // Direction arrow
+            ctx.beginPath();
+            if (direction > 0) {
+                ctx.moveTo(indicatorX + windBar + 5, indicatorY + 15);
+                ctx.lineTo(indicatorX + windBar + 15, indicatorY + 15);
+                ctx.lineTo(indicatorX + windBar + 10, indicatorY + 5);
+            } else {
+                ctx.moveTo(indicatorX - windBar - 5, indicatorY + 15);
+                ctx.lineTo(indicatorX - windBar - 15, indicatorY + 15);
+                ctx.lineTo(indicatorX - windBar - 10, indicatorY + 5);
+            }
+            ctx.closePath();
+            ctx.fill();
+        }
+        
+        // Update player position and state
+        function updatePlayer(dt) {
+            // Movement
+            if (keys.left) {
+                player.x -= player.speed;
+            }
+            if (keys.right) {
+                player.x += player.speed;
+            }
+            
+            // Jumping
+            if (keys.jump && !player.jumping) {
+                player.jumping = true;
+                player.velocityY = -15;
+                
+                // Create jump particles
+                for (let i = 0; i < 5; i++) {
+                    particles.push({
+                        x: player.x,
+                        y: player.y,
+                        size: 1 + Math.random() * 2,
+                        color: { r: 200, g: 200, b: 200 },
+                        velocityX: -1 + Math.random() * 2,
+                        velocityY: Math.random() * 2,
+                        life: 0.5 + Math.random() * 0.3,
+                        decay: 0.05 + Math.random() * 0.03
+                    });
+                }
+            }
+            
+            // Apply gravity
+            player.velocityY += gravity;
+            player.y += player.velocityY;
+            
+            // Platform collision
+            let onPlatform = false;
+            platforms.forEach(platform => {
+                // Check if player is on a platform
+                if (player.y >= platform.y && 
+                    player.y <= platform.y + 10 && 
+                    player.x + player.width/2 >= platform.x && 
+                    player.x - player.width/2 <= platform.x + platform.width) {
+                    player.y = platform.y;
+                    player.velocityY = 0;
+                    player.jumping = false;
+                    onPlatform = true;
+                }
+            });
+            
+            // If not on any platform and below bottom, game over
+            if (!onPlatform && player.y > canvas.height) {
+                // Reset player position
+                player.y = 500;
+                player.velocityY = 0;
+                player.jumping = false;
+            }
+            
+            // Keep player in bounds
+            if (player.x < 20) player.x = 20;
+            if (player.x > canvas.width - 20) player.x = canvas.width - 20;
+            
+            // Bow power
+            if (player.isDrawingBow) {
+                player.bowPower += 4 * dt;
+                if (player.bowPower > player.maxBowPower) {
+                    player.bowPower = player.maxBowPower;
+                    
+                    // Create particles to show max power
+                    if (Math.random() < 0.3) {
+                        // Get bow position
+                        const bowOffset = 20 + player.bowPower / player.maxBowPower * 10;
+                        const bowX = player.x + Math.cos(player.aimAngle) * bowOffset;
+                        const bowY = player.y - player.height/2 + Math.sin(player.aimAngle) * bowOffset;
+                        
+                        // Particle color based on arrow type
+                        let particleColor;
+                        switch(currentArrowType) {
+                            case ARROW_TYPES.GRAPPLING:
+                                particleColor = { r: 60, g: 179, b: 113 };
+                                break;
+                            case ARROW_TYPES.EXPLOSIVE:
+                                particleColor = { r: 255, g: 107, b: 107 };
+                                break;
+                            case ARROW_TYPES.SPEED:
+                                particleColor = { r: 0, g: 191, b: 255 };
+                                break;
+                            default:
+                                particleColor = { r: 255, g: 215, b: 0 };
+                        }
+                        
+                        particles.push({
+                            x: bowX,
+                            y: bowY,
+                            size: 1 + Math.random() * 2,
+                            color: particleColor,
+                            velocityX: (Math.random() - 0.5) * 2,
+                            velocityY: (Math.random() - 0.5) * 2,
+                            life: 0.5 + Math.random() * 0.3,
+                            decay: 0.03 + Math.random() * 0.03
+                        });
+                    }
+                }
+            }
+        }
+        
+        // Update target
+        function updateTarget(dt) {
+            if (target.hit) {
+                if (Date.now() - target.hitTime > 300) {
+                    target.hit = false;
+                }
+            }
+            
+            if (target.dying) {
+                // Update death animation parts
+                for (let i = target.parts.length - 1; i >= 0; i--) {
+                    const part = target.parts[i];
+                    
+                    // Remove parts that are off-screen
+                    if (part.y > canvas.height) {
+                        target.parts.splice(i, 1);
+                    }
+                }
+            }
+        }
+        
+        // Update arrows
+        function updateArrows(dt) {
+            for (let i = arrows.length - 1; i >= 0; i--) {
+                const arrow = arrows[i];
+                
+                // Track arrow age
+                arrow.age += dt;
+                
+                // Skip updating if the arrow is in a special state
+                if (arrow.type === ARROW_TYPES.EXPLOSIVE && arrow.exploding) {
+                    // Handle explosion animation
+                    const explosionProgress = (Date.now() - arrow.explosionStart) / arrow.explosionDuration;
+                    
+                    if (explosionProgress >= 1) {
+                        // Explosion finished
+                        arrows.splice(i, 1);
+                    } else {
+                        // Update explosion radius
+                        arrow.explosionRadius = 40 * explosionProgress;
+                        
+                        // Apply explosion damage to nearby target
+                        if (!target.dying && !target.hit) {
+                            const distance = Math.sqrt(
+                                Math.pow(target.x - arrow.x, 2) + 
+                                Math.pow(target.y - target.height/2 - arrow.y, 2)
+                            );
+                            
+                            if (distance < arrow.explosionRadius) {
+                                // Calculate damage based on proximity (closer = more damage)
+                                const damageMultiplier = 1 - (distance / arrow.explosionRadius);
+                                
+                                // Apply hit
+                                target.hit = true;
+                                target.hitTime = Date.now();
+                                
+                                // Reduce health based on proximity
+                                const damage = Math.ceil(damageMultiplier * 2); // Up to 2 damage
+                                target.health -= damage;
+                                
+                                if (target.health < 0) target.health = 0;
+                                document.getElementById('targetHealth').textContent = target.health;
+                                
+                                // Increase score
+                                score += 5 * damage;
+                                document.getElementById('score').textContent = score;
+                                
+                                // Check if target is destroyed
+                                if (target.health <= 0) {
+                                    startDeathAnimation();
+                                }
+                            }
+                        }
+                        
+                        // Create particles for explosion effect
+                        if (Math.random() < 0.3) {
+                            const angle = Math.random() * Math.PI * 2;
+                            const dist = Math.random() * arrow.explosionRadius;
+                            
+                            particles.push({
+                                x: arrow.x + Math.cos(angle) * dist,
+                                y: arrow.y + Math.sin(angle) * dist,
+                                size: 1 + Math.random() * 3,
+                                color: {
+                                    r: 255,
+                                    g: 107 + Math.floor(Math.random() * 148), // 107-255
+                                    b: 20 + Math.floor(Math.random() * 87)  // 20-107
+                                },
+                                velocityX: (Math.random() - 0.5) * 2,
+                                velocityY: (Math.random() - 0.5) * 2,
+                                life: 0.5 + Math.random() * 0.5,
+                                decay: 0.01 + Math.random() * 0.03
+                            });
+                        }
+                    }
+                    
+                    continue;
+                }
+                
+                if (arrow.type === ARROW_TYPES.GRAPPLING && arrow.grappling && arrow.targetHit) {
+                    // Move the target towards the player
+                    const dx = player.x - target.x;
+                    const dy = (player.y - player.height/2) - (target.y - target.height/2);
+                    const distance = Math.sqrt(dx*dx + dy*dy);
+                    
+                    if (distance < 20) {
+                        // Target reached player, remove arrow
+                        arrows.splice(i, 1);
+                        target.isBeingGrappled = false;
+                        
+                        // Apply hit
+                        target.hit = true;
+                        target.hitTime = Date.now();
+                        
+                        // Reduce health
+                        target.health--;
+                        document.getElementById('targetHealth').textContent = target.health;
+                        
+                        // Increase score
+                        score += 15; // Bonus for pulling target
+                        document.getElementById('score').textContent = score;
+                        
+                        // Check if target is destroyed
+                        if (target.health <= 0) {
+                            startDeathAnimation();
+                        }
+                    } else {
+                        // Move target towards player
+                        target.x += (dx / distance) * arrow.pullForce * 60 * dt;
+                        target.y += (dy / distance) * arrow.pullForce * 60 * dt;
+                        
+                        // Update arrow position to stay with target
+                        arrow.x = target.x;
+                        arrow.y = target.y - target.height/2;
+                        
+                        // Create grapple rope particles occasionally
+                        if (Math.random() < 0.1) {
+                            const t = Math.random();
+                            const particleX = player.x * t + arrow.x * (1-t);
+                            const particleY = (player.y - player.height/2) * t + arrow.y * (1-t);
+                            
+                            particles.push({
+                                x: particleX,
+                                y: particleY,
+                                size: 1 + Math.random(),
+                                color: { r: 160, g: 160, b: 160 },
+                                velocityX: (Math.random() - 0.5) * 0.5,
+                                velocityY: (Math.random() - 0.5) * 0.5,
+                                life: 0.2 + Math.random() * 0.2,
+                                decay: 0.05 + Math.random() * 0.05
+                            });
+                        }
+                    }
+                    
+                    continue;
+                }
+                
+                // Apply gravity (with modifications for arrow types)
+                if (arrow.type === ARROW_TYPES.SPEED) {
+                    arrow.velocityY += gravity * arrow.gravityFactor;
+                } else {
+                    arrow.velocityY += gravity;
+                }
+                
+                // Apply wind (grappling arrows are less affected)
+                const windFactor = arrow.type === ARROW_TYPES.GRAPPLING ? 0.005 : 0.01;
+                arrow.velocityX += windSpeed * windFactor;
+                
+                // Update position
+                arrow.x += arrow.velocityX * dt * 60;
+                arrow.y += arrow.velocityY * dt * 60;
+                
+                // Create trail particles for speed arrows
+                if (arrow.type === ARROW_TYPES.SPEED && Math.random() < 0.3) {
+                    particles.push({
+                        x: arrow.x - Math.cos(Math.atan2(arrow.velocityY, arrow.velocityX)) * 10 * Math.random(),
+                        y: arrow.y - Math.sin(Math.atan2(arrow.velocityY, arrow.velocityX)) * 10 * Math.random(),
+                        size: 1 + Math.random() * 2,
+                        color: { r: 0, g: 191, b: 255 },
+                        velocityX: 0,
+                        velocityY: 0,
+                        life: 0.3 + Math.random() * 0.3,
+                        decay: 0.05 + Math.random() * 0.05
+                    });
+                }
+                
+                // Check collision with target
+                if (!target.dying && checkArrowHit(arrow, target)) {
+                    // Handle hit based on arrow type
+                    if (arrow.type === ARROW_TYPES.EXPLOSIVE) {
+                        // Start explosion
+                        arrow.exploding = true;
+                        arrow.explosionStart = Date.now();
+                        
+                        // Don't remove the arrow yet
+                        continue;
+                    }
+                    else if (arrow.type === ARROW_TYPES.GRAPPLING) {
+                        // Start grappling
+                        arrow.grappling = true;
+                        arrow.targetHit = true;
+                        target.isBeingGrappled = true;
+                        
+                        // Don't remove the arrow yet
+                        continue;
+                    }
+                    else {
+                        // Normal arrow or speed arrow hit
+                        // Mark target as hit
+                        target.hit = true;
+                        target.hitTime = Date.now();
+                        
+                        // Calculate damage - speed arrows do more damage based on velocity
+                        let damage = 1;
+                        if (arrow.type === ARROW_TYPES.SPEED) {
+                            // Calculate speed
+                            const speed = Math.sqrt(arrow.velocityX * arrow.velocityX + arrow.velocityY * arrow.velocityY);
+                            // Extra damage based on speed
+                            damage = Math.min(3, Math.ceil(speed / 20));
+                        }
+                        
+                        // Reduce health
+                        target.health -= damage;
+                        document.getElementById('targetHealth').textContent = target.health;
+                        
+                        // Increase score
+                        score += 10 * damage;
+                        document.getElementById('score').textContent = score;
+                        
+                        // Remove the arrow
+                        arrows.splice(i, 1);
+                        
+                        // Check if target is destroyed
+                        if (target.health <= 0) {
+                            startDeathAnimation();
+                        }
+                        
+                        continue;
+                    }
+                }
+                
+                // Remove if off screen
+                if (arrow.y > canvas.height || arrow.x < 0 || arrow.x > canvas.width) {
+                    arrows.splice(i, 1);
+                }
+                
+                // Handle speed arrow time limit - they disappear after 2 seconds
+                if (arrow.type === ARROW_TYPES.SPEED && arrow.age > 2) {
+                    arrows.splice(i, 1);
+                }
+            }
+        }
+        
+        // Check if arrow hits target
+        function checkArrowHit(arrow, targetObj) {
+            // If target is already hit by a grappling arrow, no additional hits
+            if (targetObj.isBeingGrappled && arrow.type !== ARROW_TYPES.GRAPPLING) {
+                return false;
+            }
+            
+            const targetLeft = targetObj.x - targetObj.width/2;
+            const targetRight = targetObj.x + targetObj.width/2;
+            const targetTop = targetObj.y - targetObj.height;
+            const targetBottom = targetObj.y;
+            
+            // Arrow tip position
+            const arrowTipX = arrow.x + Math.cos(Math.atan2(arrow.velocityY, arrow.velocityX)) * 20;
+            const arrowTipY = arrow.y + Math.sin(Math.atan2(arrow.velocityY, arrow.velocityX)) * 20;
+            
+            // Basic hit detection
+            const directHit = arrowTipX >= targetLeft && arrowTipX <= targetRight && 
+                   arrowTipY >= targetTop && arrowTipY <= targetBottom;
+                   
+            // For explosive arrows, they can also detonate near the target
+            if (arrow.type === ARROW_TYPES.EXPLOSIVE && !directHit) {
+                // Check if arrow is close to the target (proximity detonation)
+                const targetCenterX = targetObj.x;
+                const targetCenterY = targetObj.y - targetObj.height/2;
+                
+                const distance = Math.sqrt(
+                    Math.pow(arrowTipX - targetCenterX, 2) + 
+                    Math.pow(arrowTipY - targetCenterY, 2)
+                );
+                
+                // Detonate if within 30 pixels of target
+                if (distance < 30) {
+                    return true;
+                }
+            }
+            
+            return directHit;
+        }
+        
+        // Fire an arrow
+        function fireArrow() {
+            // Calculate starting position at the bow
+            const bowOffset = 20 + player.bowPower / player.maxBowPower * 10;
+            const arrowX = player.x + Math.cos(player.aimAngle) * bowOffset;
+            const arrowY = player.y - player.height/2 + Math.sin(player.aimAngle) * bowOffset;
+            
+            // Set power multiplier based on arrow type
+            let powerMultiplier;
+            
+            switch(currentArrowType) {
+                case ARROW_TYPES.SPEED:
+                    powerMultiplier = 5; // Speed arrows are much faster
+                    break;
+                case ARROW_TYPES.GRAPPLING:
+                    powerMultiplier = 3.5; // Slightly faster than normal
+                    break;
+                default:
+                    powerMultiplier = 3;
+            }
+            
+            // Calculate arrow velocity based on bow power
+            const arrowVelX = Math.cos(player.aimAngle) * player.bowPower * powerMultiplier;
+            const arrowVelY = Math.sin(player.aimAngle) * player.bowPower * powerMultiplier;
+            
+            // Create the arrow object with type-specific properties
+            const arrowBase = {
+                x: arrowX,
+                y: arrowY,
+                velocityX: arrowVelX,
+                velocityY: arrowVelY,
+                type: currentArrowType,
+                // Add age property to track how long arrow has been in flight
+                age: 0
+            };
+            
+            // Add type-specific properties
+            let arrow;
+            
+            switch(currentArrowType) {
+                case ARROW_TYPES.GRAPPLING:
+                    arrow = {
+                        ...arrowBase,
+                        grappling: false,
+                        targetHit: false,
+                        pullForce: 0.5 + player.bowPower * 0.05 // Stronger pull with more power
+                    };
+                    break;
+                case ARROW_TYPES.EXPLOSIVE:
+                    arrow = {
+                        ...arrowBase,
+                        exploding: false,
+                        explosionRadius: 0,
+                        explosionForce: 5 + player.bowPower * 0.5, // Stronger explosion with more power
+                        explosionDuration: 500 // ms
+                    };
+                    break;
+                case ARROW_TYPES.SPEED:
+                    arrow = {
+                        ...arrowBase,
+                        // Speed arrows are affected less by gravity
+                        gravityFactor: 0.5
+                    };
+                    break;
+                default:
+                    arrow = { ...arrowBase };
+            }
+            
+            // Add to arrows array
+            arrows.push(arrow);
+            
+            // Play arrow sound (if implemented)
+            // playSound('arrow-release');
+        }
+        
+        // Start the death animation for the target
+        function startDeathAnimation() {
+            target.dying = true;
+            target.deathTime = Date.now();
+            
+            // Create parts for the death animation
+            target.parts = [
+                // Helmet
+                {
+                    x: target.x,
+                    y: target.y - target.height + 5,
+                    width: 15,
+                    height: 10,
+                    velocityX: -2 + Math.random() * 4,
+                    velocityY: -5 - Math.random() * 5,
+                    rotation: 0,
+                    rotationSpeed: -0.1 + Math.random() * 0.2
+                },
+                // Chest
+                {
+                    x: target.x,
+                    y: target.y - target.height/2,
+                    width: 20,
+                    height: 20,
+                    velocityX: -1 + Math.random() * 2,
+                    velocityY: -3 - Math.random() * 3,
+                    rotation: 0,
+                    rotationSpeed: -0.1 + Math.random() * 0.2
+                },
+                // Left arm
+                {
+                    x: target.x - 15,
+                    y: target.y - target
+x: target.x - 15,
+                    y: target.y - target.height/2,
+                    width: 10,
+                    height: 5,
+                    velocityX: -3 - Math.random() * 2,
+                    velocityY: -2 - Math.random() * 4,
+                    rotation: 0,
+                    rotationSpeed: -0.2 - Math.random() * 0.3
+                },
+                // Right arm
+                {
+                    x: target.x + 15,
+                    y: target.y - target.height/2,
+                    width: 10,
+                    height: 5,
+                    velocityX: 3 + Math.random() * 2,
+                    velocityY: -2 - Math.random() * 4,
+                    rotation: 0,
+                    rotationSpeed: 0.2 + Math.random() * 0.3
+                },
+                // Left leg
+                {
+                    x: target.x - 8,
+                    y: target.y - 10,
+                    width: 6,
+                    height: 20,
+                    velocityX: -2 - Math.random(),
+                    velocityY: -1 - Math.random() * 2,
+                    rotation: 0,
+                    rotationSpeed: -0.15 - Math.random() * 0.2
+                },
+                // Right leg
+                {
+                    x: target.x + 8,
+                    y: target.y - 10,
+                    width: 6,
+                    height: 20,
+                    velocityX: 2 + Math.random(),
+                    velocityY: -1 - Math.random() * 2,
+                    rotation: 0,
+                    rotationSpeed: 0.15 + Math.random() * 0.2
+                },
+                // Bow
+                {
+                    x: target.x - 15,
+                    y: target.y - target.height/2,
+                    width: 5,
+                    height: 15,
+                    velocityX: -4 - Math.random() * 2,
+                    velocityY: -3 - Math.random() * 3,
+                    rotation: 0,
+                    rotationSpeed: -0.3 - Math.random() * 0.4
+                }
+            ];
+            
+            // Play death sound (if implemented)
+            // playSound('enemy-death');
+        }
+        
+        // Reset target after being destroyed
+        function resetTarget() {
+            target.health = target.maxHealth;
+            document.getElementById('targetHealth').textContent = target.health;
+            target.dying = false;
+            target.hit = false;
+            target.parts = [];
+            target.isBeingGrappled = false;
+            
+            // New random wind
+            windSpeed = (Math.random() * 8 - 4);
+            
+            // Create particle effect for target respawn
+            const particleCount = 30;
+            for (let i = 0; i < particleCount; i++) {
+                particles.push({
+                    x: target.x,
+                    y: target.y - target.height/2,
+                    size: 1 + Math.random() * 3,
+                    color: {
+                        r: 230,
+                        g: 57,
+                        b: 70
+                    },
+                    velocityX: -3 + Math.random() * 6,
+                    velocityY: -3 + Math.random() * 6,
+                    life: 0.7 + Math.random() * 0.3,
+                    decay: 0.01 + Math.random() * 0.02
+                });
+            }
+        }
+        
+        // Create particle effects
+        function createParticles(x, y, color, count) {
+            for (let i = 0; i < count; i++) {
+                particles.push({
+                    x: x,
+                    y: y,
+                    size: 1 + Math.random() * 3,
+                    color: {
+                        r: color.r || 255,
+                        g: color.g || 255,
+                        b: color.b || 255
+                    },
+                    velocityX: -2 + Math.random() * 4,
+                    velocityY: -2 + Math.random() * 4,
+                    life: 1,
+                    decay: 0.01 + Math.random() * 0.03
+                });
+            }
+        }
+        
+        // Update game time
+        function updateTime(timestamp) {
+            if (!lastTime) {
+                lastTime = timestamp;
+                return 0;
+            }
+            
+            deltaTime = (timestamp - lastTime) / 1000; // Convert to seconds
+            lastTime = timestamp;
+            
+            // Limit delta time to avoid physics issues on lag
+            if (deltaTime > 0.1) deltaTime = 0.1;
+            
+            return deltaTime;
+        }
+        
+        // Main game loop
+        function gameLoop(timestamp) {
+            // Update time
+            const dt = updateTime(timestamp);
+            
+            // Clear canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw background
+            drawBackground();
+            
+            // Update game objects
+            updatePlayer(dt);
+            updateTarget(dt);
+            updateArrows(dt);
+            
+            // Draw game objects
+            drawPlatforms();
+            drawPlayer();
+            drawTarget();
+            drawArrows();
+            drawParticles();
+            drawPowerMeter();
+            drawWindIndicator();
+            
+            // Continue game loop
+            requestAnimationFrame(gameLoop);
+        }
+        
+        // Start the game
+        gameLoop();
+    </script>
+</body>
+</html>
