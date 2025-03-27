@@ -61,11 +61,11 @@
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
         
-        // Game constants - IMPROVED PHYSICS
-        const GRAVITY = 0.3; // Reduced gravity
+        // Game constants - DRASTICALLY IMPROVED PHYSICS
+        const GRAVITY = 0.1; // Almost no gravity
         const JUMP_POWER = 15;
         const MOVEMENT_SPEED = 5;
-        const BASE_ARROW_POWER = 8; // Increased base power
+        const BASE_ARROW_POWER = 15; // Tripled arrow power
         
         // Arrow types
         const ARROW_TYPES = {
@@ -110,7 +110,7 @@
         
         // Target/enemy object
         const target = {
-            x: 650, // Moved closer for easier hitting
+            x: 650,
             y: 500,
             width: 30,
             height: 60,
@@ -118,7 +118,8 @@
             maxHealth: 3,
             hit: false,
             hitTime: 0,
-            isBeingGrappled: false
+            isBeingGrappled: false,
+            isDead: false  // New flag to track if target is dead
         };
         
         // Platforms
@@ -248,32 +249,32 @@
             player.aimAngle = Math.atan2(dy, dx);
         });
         
-        // Fire an arrow - IMPROVED POWER
+        // Fire an arrow - MASSIVELY IMPROVED POWER
         function fireArrow() {
             // Calculate starting position at the bow
             const bowOffset = 20 + player.bowPower / player.maxBowPower * 10;
             const arrowX = player.x + Math.cos(player.aimAngle) * bowOffset;
             const arrowY = player.y - player.height/2 + Math.sin(player.aimAngle) * bowOffset;
             
-            // Set power multiplier based on arrow type - INCREASED ALL VALUES
+            // Set power multiplier based on arrow type - DRAMATICALLY INCREASED ALL VALUES
             let powerMultiplier;
             
             switch(currentArrowType) {
                 case ARROW_TYPES.SPEED:
-                    powerMultiplier = 10; // Much faster
+                    powerMultiplier = 20; // 2x from previous version
                     break;
                 case ARROW_TYPES.GRAPPLING:
-                    powerMultiplier = 7; // Faster than normal
+                    powerMultiplier = 15; // 2x from previous version
                     break;
                 case ARROW_TYPES.EXPLOSIVE:
-                    powerMultiplier = 6; // Slightly faster than before
+                    powerMultiplier = 15; // More than doubled
                     break;
                 default:
-                    powerMultiplier = 6; // Doubled normal arrow power
+                    powerMultiplier = 12; // Double normal arrow power again
             }
             
-            // Calculate arrow velocity - Now with minimum power even if not fully drawn
-            const minPower = player.maxBowPower * 0.3; // Minimum 30% power
+            // Calculate arrow velocity - With high minimum power
+            const minPower = player.maxBowPower * 0.6; // 60% minimum power
             const effectivePower = Math.max(player.bowPower, minPower);
             const arrowVelX = Math.cos(player.aimAngle) * effectivePower * powerMultiplier;
             const arrowVelY = Math.sin(player.aimAngle) * effectivePower * powerMultiplier;
@@ -294,17 +295,19 @@
                     arrow.grappling = false;
                     arrow.targetHit = false;
                     arrow.pullForce = 0.5 + effectivePower * 0.05;
+                    arrow.gravityFactor = 0.1; // Almost no gravity
                     break;
                 case ARROW_TYPES.EXPLOSIVE:
                     arrow.exploding = false;
                     arrow.explosionRadius = 0;
                     arrow.explosionDuration = 500;
+                    arrow.gravityFactor = 0.2; // Very little gravity
                     break;
                 case ARROW_TYPES.SPEED:
-                    arrow.gravityFactor = 0.3; // Even less gravity
+                    arrow.gravityFactor = 0.05; // Extremely low gravity
                     break;
                 default:
-                    arrow.gravityFactor = 0.8; // Less gravity for normal arrows too
+                    arrow.gravityFactor = 0.2; // Very little gravity for normal arrows
             }
             
             // Add to arrows array
@@ -313,6 +316,15 @@
         
         // Update game objects
         function update(dt) {
+            // Skip updating if target is dead
+            if (target.isDead) {
+                // Wait 2 seconds then reset
+                setTimeout(() => {
+                    resetTarget();
+                }, 2000);
+                target.isDead = false;
+            }
+            
             updatePlayer(dt);
             updateTarget(dt);
             updateArrows(dt);
@@ -365,9 +377,9 @@
             if (player.x < player.width/2) player.x = player.width/2;
             if (player.x > canvas.width - player.width/2) player.x = canvas.width - player.width/2;
             
-            // Update bow power - FASTER DRAW
+            // Update bow power - EVEN FASTER DRAW
             if (player.isDrawingBow) {
-                player.bowPower += 8 * dt; // Faster power increase
+                player.bowPower += 12 * dt; // Faster power increase
                 if (player.bowPower > player.maxBowPower) {
                     player.bowPower = player.maxBowPower;
                 }
@@ -399,9 +411,9 @@
                         continue;
                     }
                     
-                    arrow.explosionRadius = 60 * explosionProgress; // Bigger explosion
+                    arrow.explosionRadius = 90 * explosionProgress; // Even bigger explosion
                     
-                    if (!target.hit) {
+                    if (!target.isDead && !target.hit) {
                         const distance = Math.sqrt(
                             Math.pow(target.x - arrow.x, 2) + 
                             Math.pow(target.y - target.height/2 - arrow.y, 2)
@@ -414,15 +426,14 @@
                             target.hitTime = Date.now();
                             
                             target.health -= damage;
-                            if (target.health < 0) target.health = 0;
+                            if (target.health <= 0) {
+                                target.health = 0;
+                                target.isDead = true; // Mark as dead instead of resetting immediately
+                            }
                             document.getElementById('targetHealth').textContent = target.health;
                             
                             score += 5 * damage;
                             document.getElementById('score').textContent = score;
-                            
-                            if (target.health <= 0) {
-                                resetTarget();
-                            }
                         }
                     }
                     
@@ -447,19 +458,19 @@
                         target.hitTime = Date.now();
                         
                         target.health--;
+                        if (target.health <= 0) {
+                            target.health = 0;
+                            target.isDead = true; // Mark as dead
+                        }
                         document.getElementById('targetHealth').textContent = target.health;
                         
                         score += 15;
                         document.getElementById('score').textContent = score;
-                        
-                        if (target.health <= 0) {
-                            resetTarget();
-                        }
                         continue;
                     }
                     
-                    target.x += (dx / distance) * arrow.pullForce * 60 * dt;
-                    target.y += (dy / distance) * arrow.pullForce * 60 * dt;
+                    target.x += (dx / distance) * arrow.pullForce * 120 * dt; // Faster pull
+                    target.y += (dy / distance) * arrow.pullForce * 120 * dt;
                     
                     arrow.x = target.x;
                     arrow.y = target.y - target.height/2;
@@ -468,7 +479,7 @@
                 }
                 
                 // Apply gravity with arrow-specific factor
-                const gravityFactor = arrow.gravityFactor || 1;
+                const gravityFactor = arrow.gravityFactor || 0.2; // Default low gravity
                 arrow.velocityY += GRAVITY * gravityFactor;
                 
                 // Update position
@@ -480,8 +491,8 @@
                     createSpeedArrowTrail(arrow);
                 }
                 
-                // Check collision with target
-                if (checkArrowHit(arrow, target)) {
+                // Check collision with target (if not already dead)
+                if (!target.isDead && checkArrowHit(arrow, target)) {
                     handleArrowHit(arrow, i);
                     continue;
                 }
@@ -541,7 +552,7 @@
                     Math.pow(arrowTipY - targetCenterY, 2)
                 );
                 
-                if (distance < 40) { // Increased detection range
+                if (distance < 60) { // Much bigger detection range
                     return true;
                 }
             }
@@ -571,26 +582,28 @@
                 }
                 
                 target.health -= damage;
+                if (target.health <= 0) {
+                    target.health = 0;
+                    target.isDead = true; // Mark as dead
+                }
                 document.getElementById('targetHealth').textContent = target.health;
                 
                 score += 10 * damage;
                 document.getElementById('score').textContent = score;
                 
                 arrows.splice(arrowIndex, 1);
-                
-                if (target.health <= 0) {
-                    resetTarget();
-                }
             }
         }
         
-        // Reset target
+        // Reset target - PROPERLY RESETS HEALTH
         function resetTarget() {
-            target.health = target.maxHealth;
+            target.health = target.maxHealth; // Reset to full health
             document.getElementById('targetHealth').textContent = target.health;
             target.hit = false;
             target.isBeingGrappled = false;
+            target.isDead = false;
             
+            // Create respawn particles
             for (let i = 0; i < 20; i++) {
                 particles.push({
                     x: target.x,
@@ -712,6 +725,11 @@
         
         // Draw target
         function drawTarget() {
+            // Don't draw if dead and waiting for reset
+            if (target.isDead && target.health <= 0) {
+                return;
+            }
+            
             ctx.save();
             ctx.translate(target.x, target.y - target.height/2);
             
@@ -745,7 +763,7 @@
                 const arrowColor = getArrowColor(arrow.type);
                 
                 if (arrow.type === ARROW_TYPES.EXPLOSIVE && arrow.exploding) {
-                    const opacity = 1 - (arrow.explosionRadius / 60);
+                    const opacity = 1 - (arrow.explosionRadius / 90);
                     
                     ctx.fillStyle = `rgba(255, 107, 107, ${opacity * 0.7})`;
                     ctx.beginPath();
@@ -822,22 +840,22 @@
             
             ctx.moveTo(startX, startY);
             
-            // Simulate arrow path with improved physics
+            // Simulate arrow path with drastically improved physics
             let simX = startX;
             let simY = startY;
             
             // Adjusted multipliers for better visualization
-            const speedMultiplier = currentArrowType === ARROW_TYPES.SPEED ? 10 : 6;
+            const speedMultiplier = currentArrowType === ARROW_TYPES.SPEED ? 20 : 12;
             const gravityEffect = currentArrowType === ARROW_TYPES.SPEED ? 0.05 : 0.1;
             
             let simVelX = Math.cos(player.aimAngle) * player.bowPower * speedMultiplier;
             let simVelY = Math.sin(player.aimAngle) * player.bowPower * speedMultiplier;
             
-            for (let i = 0; i < 60; i++) { // More simulation steps
+            for (let i = 0; i < 100; i++) { // Way more simulation steps
                 simVelY += GRAVITY * gravityEffect;
                 
-                simX += simVelX * 0.1;
-                simY += simVelY * 0.1;
+                simX += simVelX * 0.05;
+                simY += simVelY * 0.05;
                 
                 ctx.lineTo(simX, simY);
                 
